@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Autonomous AI Agent for Kaggle (2x T4 + Qwen3.5 9B Vision + 128K Context)
-Simpan sebagai /kaggle/working/agent.py lalu jalankan:
-    python /kaggle/working/agent.py
+Simpan sebagai /kaggle/working/codekaggle.py lalu jalankan:
+    python /kaggle/working/codekaggle.py
 """
 
 import os
@@ -272,8 +272,25 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
 
 
 # =====================================================================
-# 2. REAL-TIME TELEMETRY, AUTO-PRUNING & ANTI-HALUSINASI
+# 2. REAL-TIME TELEMETRY, SERVER LOCATION & ANTI-HALUSINASI
 # =====================================================================
+def get_server_location() -> str:
+    try:
+        req = urllib.request.Request('https://ipinfo.io/json', headers={'User-Agent': 'curl/8.0'})
+        data = json.loads(urllib.request.urlopen(req, timeout=5).read().decode())
+        ip = data.get('ip', '?')
+        city = data.get('city', '?')
+        region = data.get('region', '?')
+        country = data.get('country', '?')
+        org = data.get('org', '?')
+        return f"{city}, {region}, {country} (IP: {ip} | Provider: {org})"
+    except Exception:
+        return "Google Cloud Platform / Kaggle Container (Internet off atau ipinfo tidak terjangkau)"
+
+
+SERVER_LOCATION_CACHE = get_server_location()
+
+
 def get_now_wib() -> str:
     wib = timezone(timedelta(hours=7))
     now = datetime.now(wib)
@@ -339,6 +356,7 @@ def build_system_prompt(est_tokens: int, base_dir: str, max_ctx: int) -> str:
     return (
         "Kamu adalah Autonomous AI Agent & Partner Kerja Profesional berstandar global yang berjalan di lingkungan Kaggle.\n"
         f"WAKTU REAL-TIME: {get_now_wib()}.\n"
+        f"LOKASI SERVER REAL-TIME: {SERVER_LOCATION_CACHE}.\n"
         f"STATUS SERVER REAL-TIME: {get_realtime_telemetry(est_tokens, base_dir, max_ctx)}.\n"
         f"WORKSPACE UTAMA: `{base_dir}` (dan `/kaggle/input` untuk dataset). Default pencarian proyek dimulai dari `{base_dir}`, "
         "namun kamu tetap bisa memeriksa `/` atau direktori sistem lain kapan pun diminta user.\n"
@@ -562,11 +580,12 @@ def main():
 
     try:
         print(f'Menyalakan Autonomous AI Agent ({get_now_wib()})...')
+        print(f'Lokasi Server: {SERVER_LOCATION_CACHE}')
         proc, log_file = start_llama_server(base_dir, port, max_ctx)
         if not wait_ready(proc, port):
             raise RuntimeError('Server gagal jalan')
 
-        print('Agent Siap! Telemetri real-time, Web Fetch, Vision, & Auto-Pruning aktif.')
+        print('Agent Siap! Telemetri real-time, Lokasi Server, Web Fetch, Vision, & Auto-Pruning aktif.')
         print('Opsional: /img <path_gambar> <pertanyaan> | /clear | exit\n' + '=' * 75)
 
         while True:
