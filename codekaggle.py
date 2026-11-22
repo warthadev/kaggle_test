@@ -30,7 +30,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_dir",
-            "description": "Melihat daftar folder, file, dan jumlah baris di direktori mana pun (default workspace: /kaggle/working, bisa juga cek / atau folder lain).",
+            "description": "Melihat daftar folder, file, dan ukuran/baris di direktori proyek (default workspace: /kaggle/working, bisa juga cek / atau folder lain).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -134,7 +134,10 @@ TOOLS = [
     }
 ]
 
-PROJECT_IGNORE_DIRS = {'node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build', '.next', '.cache'}
+PROJECT_IGNORE_DIRS = {
+    'node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build', '.next', '.cache',
+    'llama_bin', 'model_gguf'
+}
 SYS_SHALLOW_DIRS = {'proc', 'sys', 'dev', 'usr', 'lib', 'lib64', 'var', 'etc', 'boot', 'run', 'opt', 'srv'}
 
 HARD_PATTERNS = re.compile(
@@ -184,9 +187,13 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
                 for fn in sorted(files)[:40]:
                     fp = os.path.join(root, fn)
                     try:
-                        with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
-                            lc = sum(1 for _ in f)
-                        out.append(f"{indent}📄 {fn} ({lc} baris)")
+                        fsize = os.path.getsize(fp)
+                        if fsize > 1024 * 1024:
+                            out.append(f"{indent}📄 {fn} ({fsize / (1024*1024):.1f} MB)")
+                        else:
+                            with open(fp, 'rb') as f:
+                                lc = f.read().count(b'\n') + 1
+                            out.append(f"{indent}📄 {fn} ({lc} baris)")
                     except Exception:
                         out.append(f"{indent}📄 {fn}")
                 if len(out) > 120:
@@ -198,6 +205,8 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
             fp = args["path"]
             if not os.path.exists(fp):
                 return f"Error: File '{fp}' tidak ditemukan."
+            if os.path.getsize(fp) > 5 * 1024 * 1024:
+                return f"Error: File '{fp}' terlalu besar (>5 MB) untuk dibaca sebagai teks."
             s = max(1, int(args.get("start_line", 1)))
             e = int(args.get("end_line", 7500))
             with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
