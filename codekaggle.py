@@ -109,7 +109,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Mencari informasi terkini di internet (berita, statistik, jumlah subscriber/follower, harga, dokumentasi) secara real-time tanpa perlu tahu URL sebelumnya.",
+            "description": "Mencari informasi terkini di internet (berita, statistik, jumlah subscriber/follower, harga, dokumentasi) secara real-time.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -156,6 +156,12 @@ PROJECT_IGNORE_DIRS = {
 }
 SYS_SHALLOW_DIRS = {'proc', 'sys', 'dev', 'usr', 'lib', 'lib64', 'var', 'etc', 'boot', 'run', 'opt', 'srv'}
 
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+}
+
 
 def encode_image_b64(img_path: str) -> str:
     ext = os.path.splitext(img_path)[1].lower().lstrip('.') or 'png'
@@ -164,6 +170,96 @@ def encode_image_b64(img_path: str) -> str:
     with open(img_path, 'rb') as f:
         b64 = base64.b64encode(f.read()).decode()
     return f'data:image/{ext};base64,{b64}'
+
+
+def _is_blocked_html(text: str) -> bool:
+    low = text.lower()
+    markers = [
+        'anomaly-modal', 'challenge', 'captcha', 'bot detection',
+        'unusual traffic', 'please complete a security check', 'ddg-captcha'
+    ]
+    return any(m in low for m in markers) and ('result-link' not in low and 'b_algo' not in low)
+
+
+def _search_ddg(query: str, max_results: int = 6) -> list:
+    encoded_q = urllib.parse.urlencode({'q': query})
+    req = urllib.request.Request(f"https://lite.duckduckgo.com/lite/?{encoded_q}", headers=BROWSER_HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        raw = html.unescape(r.read().decode('utf-8', errors='ignore'))
+    if _is_blocked_html(raw):
+        return []
+
+    snippets = re.findall(r"<td class=['\"]result-snippet['\"]>(.*?)</td>", raw, flags=re.DOTALL | re.IGNORECASE)
+    links = re.findall(r"<a[^>]+class=['\"]result-link['\"][^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>", raw, flags=re.DOTALL | re.IGNORECASE)
+
+    out = []
+    for idx in range(min(max_results, max(len(links), len(snippets)))):
+        title = re.sub(r'<[^>]+>', '', links[idx][1]).strip() if idx < len(links) else ''
+        href = links[idx][0].strip() if idx < len(links) else ''
+        snip = re.sub(r'<[^>]+>', '', snippets[idx]).strip() if idx < len(snippets) else ''
+        snip = re.sub(r'\s+', ' ', snip)
+        if title or snip:
+            out.append(f"- {title} ({href}): {snip}")
+    return out
+
+
+def _search_bing(query: str, max_results: int = 6) -> list:
+    encoded_q = urllib.parse.urlencode({'q': query, 'setlang': 'id-ID'})
+    req = urllib.request.Request(f"https://www.bing.com/search?{encoded_q}", headers=BROWSER_HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        raw = html.unescape(r.read().decode('utf-8', errors='ignore'))
+
+    blocks = re.findall(r"<li class=['\"]b_algo['\"][^>]*>(.*?)</li>", raw, flags=re.DOTALL | re.IGNORECASE)
+    out = []
+    for b in blocks[:max_results]:
+        m_link = re.search(r"<h2[^>]*>\s*<a[^>]+href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>\s*</h2>", b, flags=re.DOTALL | re.IGNORECASE)
+        m_snip = re.search(r"<p[^>]*>(.*?)</p>", b, flags=re.DOTALL | re.IGNORECASE)
+        title = re.sub(r'<[^>]+>', '', m_link.group(2)).strip() if m_link else ''
+        href = m_link.group(1).strip() if m_link else ''
+        snip = re.sub(r'<[^>]+>', '', m_snip.group(1)).strip() if m_snip else ''
+        snip = re.sub(r'\s+', ' ', snip)
+        if title or snip:
+            out.append(f"- {title} ({href}): {snip}")
+    return out
+
+
+def _search_wikipedia(query: str, max_results: int = 3) -> list:
+    out = []
+    for lang in ('id', 'en'):
+        encoded_q = urllib.parse.urlencode({'action': 'query', 'list': 'search', 'srsearch': query, 'format': 'json', 'srlimit': max_results})
+        req = urllib.request.Request(f"https://{lang}.wikipedia.org/w/api.php?{encoded_q}", headers=BROWSER_HEADERS)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read().decode('utf-8', errors='ignore'))
+            for item in data.get('query', {}).get('search', []):
+                title = item.get('title', '')
+                snip = re.sub(r'<[^>]+>', '', html.unescape(item.get('snippet', '')))
+                snip = re.sub(r'\s+', ' ', snip).strip()
+                out.append(f"- [Wikipedia {lang.upper()}] {title}: {snip}")
+        except Exception:
+            continue
+    return out[:max_results * 2]
+
+
+def perform_web_search(query: str, max_results: int = 6) -> str:
+    items = []
+    errors = []
+
+    for fn_name, fn in (('DuckDuckGo', _search_ddg), ('Bing', _search_bing), ('Wikipedia', _search_wikipedia)):
+        try:
+            found = fn(query, max_results=max_results)
+            if found:
+                items.extend(found)
+                if len(items) >= max_results:
+                    break
+            else:
+                errors.append(f"{fn_name}: kosong/terblokir")
+        except Exception as e:
+            errors.append(f"{fn_name}: {e}")
+
+    if not items:
+        return f"[PENCARIAN WEB TIDAK MENGHASILKAN DATA VALID ({'; '.join(errors)})]"
+    return "\n".join(items[:max_results])
 
 
 def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
@@ -270,39 +366,16 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
 
         elif name == "web_search":
             q = args["query"]
-            encoded_q = urllib.parse.urlencode({'q': q})
-            req = urllib.request.Request(
-                f"https://lite.duckduckgo.com/lite/?{encoded_q}",
-                headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
-            )
-            with urllib.request.urlopen(req, timeout=20) as r:
-                raw = html.unescape(r.read().decode('utf-8', errors='ignore'))
-
-            snippets = re.findall(r"<td class=['\"]result-snippet['\"]>(.*?)</td>", raw, flags=re.DOTALL | re.IGNORECASE)
-            links = re.findall(r"<a[^>]+class=['\"]result-link['\"][^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>", raw, flags=re.DOTALL | re.IGNORECASE)
-
-            results = []
-            for idx in range(min(8, max(len(links), len(snippets)))):
-                title = re.sub(r'<[^>]+>', '', links[idx][1]).strip() if idx < len(links) else ''
-                href = links[idx][0].strip() if idx < len(links) else ''
-                snip = re.sub(r'<[^>]+>', '', snippets[idx]).strip() if idx < len(snippets) else ''
-                snip = re.sub(r'\s+', ' ', snip)
-                if title or snip:
-                    results.append(f"{idx+1}. {title}\n   URL: {href}\n   Ringkasan: {snip}")
-
-            if not results:
-                clean = re.sub(r'<(script|style).*?>.*?</\1>', '', raw, flags=re.DOTALL | re.IGNORECASE)
-                clean = re.sub(r'<[^>]+>', ' ', clean)
-                clean = re.sub(r'\s+', ' ', clean).strip()
-                return f"HASIL PENCARIAN '{q}':\n{clean[:5000]}"
-
-            return f"HASIL PENCARIAN REAL-TIME UNTUK '{q}':\n\n" + "\n\n".join(results)
+            res = perform_web_search(q, max_results=6)
+            return f"HASIL PENCARIAN REAL-TIME UNTUK '{q}':\n\n{res}"
 
         elif name == "web_fetch":
             url = args["url"]
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(url, headers=BROWSER_HEADERS)
             with urllib.request.urlopen(req, timeout=20) as r:
                 raw = html.unescape(r.read().decode('utf-8', errors='ignore'))
+            if _is_blocked_html(raw):
+                return f"URL: {url}\nSTATUS: Diblokir proteksi bot/captcha halaman target."
             clean = re.sub(r'<(script|style).*?>.*?</\1>', '', raw, flags=re.DOTALL | re.IGNORECASE)
             clean = re.sub(r'<[^>]+>', ' ', clean)
             clean = re.sub(r'\s+', ' ', clean).strip()
@@ -430,23 +503,27 @@ def build_system_prompt(est_tokens: int, base_dir: str, max_ctx: int) -> str:
         "namun kamu tetap bisa memeriksa `/` atau direktori lain kapan pun diperlukan.\n"
         "TOOLS TERSEDIA: `list_dir`, `read_file`, `patch_file`, `write_file`, `run_bash`, `web_search`, `web_fetch`, `inspect_image`.\n\n"
         "PRINSIP BERPIKIR & CARA KERJA ALAMI:\n"
-        "1. BACA PEDOMAN & VERIFIKASI FAKTA SEBELUM BERTINDAK: Setiap kali pengguna menanyakan informasi yang dinamis, "
-        "terkini, atau berada di luar pengetahuan pasti (misalnya angka statistik publik saat ini, perkembangan terbaru, "
-        "atau cara kerja suatu sistem/API/aturan), cari dan baca pedoman atau sumber aslinya terlebih dahulu lewat "
-        "`web_search`, `web_fetch`, `read_file`, atau inspeksi bantuan sistem sebelum menjawab. Jangan pernah menebak.\n"
-        "2. JUJUR JIKA TIDAK ADA SOLUSI / DATA TIDAK TERSEDIA: Jika setelah memeriksa pedoman resmi atau mencari di web "
-        "terbukti bahwa fitur, izin, atau data yang diminta memang tidak tersedia, berhenti mencoba-coba dan sampaikan "
-        "terus terang beserta alternatif praktisnya.\n"
+        "1. BACA PEDOMAN & VERIFIKASI FAKTA SEBELUM BERTINDAK: Setiap kali pengguna menanyakan informasi publik, tokoh, "
+        "angka statistik terkini, berita, harga, atau cara kerja suatu sistem/API/aturan, gunakan `web_search`, `web_fetch`, "
+        "`read_file`, atau inspeksi bantuan sistem terlebih dahulu. JANGAN PERNAH menebak atau mengarang data, definisi, maupun harga.\n"
+        "2. JUJUR JIKA TIDAK ADA SOLUSI / DATA TERBLOKIR: Jika hasil pencarian kosong, terblokir captcha/bot, atau memang "
+        "tidak memuat data yang dicari, JANGAN MENGARANG. Sampaikan secara terus terang bahwa data real-time tidak berhasil "
+        "diambil dan jelaskan fakta yang benar-benar diketahui saja.\n"
         "3. PEMETAAN PRASYARAT SECARA MENYELURUH: Sebelum mengeksekusi tugas di bidang apa pun (strategi bisnis, riset, "
-        "keuangan, maupun akses layanan/sistem), pertimbangkan apakah seluruh komponen atau pasangan syaratnya sudah lengkap "
-        "(seperti tujuan + anggaran + batasan waktu, atau pasangan ID/Username + Key/Token). Jika ada bagian penting yang "
-        "belum ada, tanyakan dengan natural kepada pengguna sebelum bertindak.\n"
+        "keuangan, maupun akses layanan/sistem), evaluasi apakah seluruh variabel atau pasangan syaratnya sudah lengkap. "
+        "Jika ada bagian penting yang belum ada, tanyakan secara natural kepada pengguna sebelum bertindak.\n"
         "4. ANTI-PENGULANGAN & ANTI-HALUSINASI: Jangan mengulang tindakan yang sama persis dua kali. Jangan mengarang fakta "
         "atau angka kapasitas, dan bedakan dengan teliti antara nilai TERPAKAI dan SISA.\n"
         "5. KOMUNIKASI NATURAL & HASIL UTUH: Sesuaikan gaya bicaramu secara alami dengan konteks obrolan pengguna—santai, "
-        "tajam, empatik, dan profesional seperti rekan senior manusia. Setiap dokumen, rencana, atau kode yang dibuat "
-        "harus lengkap siap pakai tanpa placeholder."
+        "tajam, empatik, dan profesional seperti rekan senior manusia."
     )
+
+
+def should_ambient_search(text: str) -> bool:
+    words = text.strip().split()
+    if len(words) <= 2 or text.strip().startswith('/'):
+        return False
+    return True
 
 
 # =====================================================================
@@ -499,20 +576,31 @@ def wait_ready(proc, port: int, secs: int = 300) -> bool:
 
 def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
                    user_content, max_steps: int = 10):
-    history.append({'role': 'user', 'content': user_content})
+    enriched_content = user_content
+    if isinstance(user_content, str) and should_ambient_search(user_content):
+        try:
+            web_ctx = perform_web_search(user_content, max_results=4)
+            if web_ctx and not web_ctx.startswith("[PENCARIAN WEB TIDAK MENGHASILKAN DATA VALID"):
+                enriched_content = (
+                    f"{user_content}\n\n"
+                    f"[Referensi Web Real-Time Otomatis]:\n{web_ctx[:2200]}"
+                )
+        except Exception:
+            pass
+
+    history.append({'role': 'user', 'content': enriched_content})
     prune_old_tool_outputs(history, max_ctx)
     history[0]['content'] = build_system_prompt(estimate_history_tokens(history), base_dir, max_ctx)
 
     executed_sigs = set()
 
     for step in range(max_steps):
-        # Penalaran native selalu aktif dengan budget natural agar model sendiri yang menakar kedalaman berpikirnya
         payload = {
             'messages': history,
             'tools': TOOLS,
             'tool_choice': 'auto',
             'max_tokens': -1,
-            'temperature': 0.3,
+            'temperature': 0.25,
             'stream': True,
             'cache_prompt': True,
             'reasoning_budget': 2048,
@@ -676,7 +764,7 @@ def main():
         if not wait_ready(proc, port):
             raise RuntimeError('Server gagal jalan')
 
-        print('Siap! Partner AI Global aktif dengan penalaran & inisiatif alami.')
+        print('Siap! Partner AI Global aktif dengan penalaran & pencarian web multi-sumber.')
         print('Opsional: /img <path_gambar> <pertanyaan> | /clear | exit\n' + '=' * 75)
 
         while True:
