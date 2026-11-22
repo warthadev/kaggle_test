@@ -44,7 +44,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Membaca isi dokumen teks, data, catatan, atau kode lengkap dengan nomor baris (mendukung hingga 7.500 baris sekaligus).",
+            "description": "Membaca isi dokumen teks, pedoman/SOP, data, catatan, atau kode lengkap dengan nomor baris (mendukung hingga 7.500 baris sekaligus).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -92,7 +92,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "run_bash",
-            "description": "Menjalankan perintah shell/terminal non-interaktif di server untuk otomasi, pengolahan data, kalkulasi, atau eksekusi sistem.",
+            "description": "Menjalankan perintah shell/terminal non-interaktif di server untuk membaca manual/help, otomasi, pengolahan data, kalkulasi, atau eksekusi sistem.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -107,7 +107,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "web_fetch",
-            "description": "Mengambil informasi, artikel, referensi, data publik, atau halaman web secara real-time dari URL untuk memverifikasi fakta terbaru.",
+            "description": "Mengambil pedoman resmi, dokumentasi, artikel, referensi, atau data publik secara real-time dari URL untuk verifikasi sebelum bertindak.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -144,7 +144,7 @@ HARD_PATTERNS = re.compile(
     r'\b(analisis|analisa|audit|debug|kenapa|error|bug|fix|benerin|perbaiki|algoritma|logika|'
     r'hitung|matematika|rancang|arsitektur|optimasi|bandingkan|buktikan|pecahkan|diagnosa|struktur|'
     r'strategi|riset|evaluasi|rencana|keputusan|pro kontra|skenario|dampak|studi kasus|cek|buatkan|bangun|'
-    r'bisnis|keuangan|investasi|negosiasi|hukum|risiko|prediksi|solusi|masalah|api|akun|akses)\b',
+    r'bisnis|keuangan|investasi|negosiasi|hukum|risiko|prediksi|solusi|masalah|api|akun|akses|pedoman|aturan|sop)\b',
     re.IGNORECASE
 )
 
@@ -391,20 +391,21 @@ def build_system_prompt(est_tokens: int, base_dir: str, max_ctx: int) -> str:
         f"WORKSPACE UTAMA: `{base_dir}` (dan `/kaggle/input` untuk data). Default pencarian dimulai dari `{base_dir}`, "
         "namun kamu tetap bisa memeriksa `/` atau direktori lain kapan pun diperlukan.\n"
         "TOOLS TERSEDIA: `list_dir`, `read_file`, `patch_file`, `write_file`, `run_bash`, `web_fetch`, `inspect_image`.\n\n"
-        "PRINSIP BERPIKIR GLOBAL & CARA KERJA WAJIB:\n"
-        "1. KOMUNIKASI NATURAL & PROFESIONAL: Bicaralah layaknya rekan kerja senior yang cerdas, santai, tajam, dan tidak kaku. "
-        "Berikan kabar singkat yang natural sebelum menjalankan tindakan.\n"
-        "2. PEMETAAN PRASYARAT SECARA MENYELURUH (HOLISTIK): Sebelum mengeksekusi tugas di bidang apa pun, selalu evaluasi "
-        "apakah seluruh komponen/pasangan syaratnya sudah lengkap:\n"
-        "   - Dalam bisnis, keuangan, atau strategi: periksa apakah variabel inti (tujuan, anggaran/modal, batasan waktu, target audiens, atau risiko) sudah jelas.\n"
-        "   - Dalam akses akun, layanan, atau integrasi sistem: periksa apakah pasangan identitasnya lengkap (misalnya ID/Username + Key/Token/Password, izin akses, atau konfigurasi pendukung), bukan hanya salah satu bagian saja.\n"
-        "   - Jika ada syarat penting yang kurang atau belum diberikan user, langsung jelaskan dengan jernih bagian mana yang kurang dan tanyakan ke user sebelum memaksakan tindakan.\n"
-        "3. DILARANG MENGULANG KEGAGALAN SECARA BUTA: Jika sebuah langkah atau perintah gagal, BERHENTI mengulang hal yang sama. "
-        "Mundur satu langkah, analisis akar masalahnya dari sudut pandang sistemik, dan ubah pendekatan atau minta informasi yang kurang.\n"
-        "4. DILARANG KERAS HALUSINASI: Jangan mengarang fakta, isi dokumen, hasil eksekusi, atau angka kapasitas. "
-        "Verifikasi informasi terkini lewat `web_fetch` atau baca data langsung lewat `read_file`, dan bedakan dengan teliti antara nilai TERPAKAI dan SISA.\n"
-        "5. EKSEKUSI MANDIRI & UTUH: Jika seluruh syarat sudah lengkap, selesaikan tugas secara mandiri sampai tuntas dan verifikasi hasilnya. "
-        "Setiap dokumen, rencana, atau kode yang dibuat harus utuh siap pakai tanpa placeholder."
+        "PRINSIP BERPIKIR GLOBAL & PROTOKOL KERJA WAJIB:\n"
+        "1. BACA PEDOMAN & VERIFIKASI SEBELUM BERTINDAK (WAJIB): Sebelum mengeksekusi tindakan pada sistem, API, aturan, "
+        "regulasi, atau alur kerja apa pun yang belum 100% pasti, WAJIB baca pedoman, manual, dokumentasi resmi (`web_fetch`), "
+        "SOP lokal (`read_file`), atau daftar kapabilitas/bantuan (`--help` / inspeksi objek) TERLEBIH DAHULU. "
+        "Jangan pernah menebak-nebak nama perintah, fitur, atau aturan.\n"
+        "2. JUJUR JIKA TIDAK ADA SOLUSI / FITUR TIDAK TERSEDIA: Jika setelah membaca pedoman resmi atau memeriksa kapabilitas sistem "
+        "terbukti bahwa fitur, izin, atau solusi yang diminta user memang TIDAK tersedia atau tidak didukung, BERHENTI mencoba-coba "
+        "dan sampaikan langsung faktanya ke user secara jernih beserta alternatif praktis yang bisa dilakukan.\n"
+        "3. PEMETAAN PRASYARAT SECARA MENYELURUH (HOLISTIK): Sebelum bertindak di bidang apa pun (bisnis, keuangan, strategi, "
+        "maupun akses sistem), evaluasi apakah seluruh variabel/pasangan syaratnya sudah lengkap (misalnya tujuan + anggaran + batasan waktu, "
+        "atau pasangan ID/Username + Key/Token). Jika ada bagian yang kurang, langsung tanyakan ke user sebelum memaksakan eksekusi.\n"
+        "4. DILARANG MENGULANG TINDAKAN YANG SAMA & DILARANG HALUSINASI: Jangan pernah mengulang perintah dengan argumen yang sama dua kali. "
+        "Jangan mengarang fakta atau angka telemetri, dan bedakan dengan teliti antara nilai TERPAKAI dan SISA.\n"
+        "5. KOMUNIKASI NATURAL & EKSEKUSI UTUH: Bicaralah layaknya rekan senior yang cerdas, santai, tajam, dan tidak kaku. "
+        "Setiap dokumen, rencana, atau kode yang dibuat harus lengkap siap pakai tanpa placeholder."
     )
 
 
@@ -461,12 +462,12 @@ def wait_ready(proc, port: int, secs: int = 300) -> bool:
 
 
 def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
-                   user_content, initial_budget: int = 0, max_steps: int = 12):
+                   user_content, initial_budget: int = 0, max_steps: int = 10):
     history.append({'role': 'user', 'content': user_content})
     prune_old_tool_outputs(history, max_ctx)
     history[0]['content'] = build_system_prompt(estimate_history_tokens(history), base_dir, max_ctx)
 
-    last_failed_sig = None
+    executed_sigs = set()
 
     for step in range(max_steps):
         budget = initial_budget if step == 0 else 1536
@@ -568,18 +569,22 @@ def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
                 preview = preview[:117] + '...'
             print(f'⚙️ [Agent Action -> {fn_name}] {preview}', flush=True)
 
-            if sig == last_failed_sig:
+            if sig in executed_sigs:
                 result = (
-                    "SYSTEM GUARD: Langkah yang sama persis baru saja gagal. "
-                    "Dilarang mengulanginya. Berhenti memanggil tool, evaluasi prasyarat atau informasi "
-                    "yang belum lengkap secara menyeluruh, lalu jelaskan langsung ke user."
+                    "SYSTEM GUARD (BLOKIR PENGULANGAN): Perintah yang sama persis ini SUDAH pernah kamu jalankan "
+                    "sebelumnya dan hasilnya sudah kamu lihat. Dilarang keras mengulanginya lagi. "
+                    "Berhenti memanggil tool sekarang juga dan berikan kesimpulan akhir yang jujur kepada user "
+                    "berdasarkan pedoman/fakta yang sudah ditemukan."
                 )
             else:
+                executed_sigs.add(sig)
                 result = exec_tool(fn_name, parsed_args, base_dir=base_dir)
                 if isinstance(result, str) and ("EXIT CODE: 1" in result or result.startswith("Error:")):
-                    last_failed_sig = sig
-                else:
-                    last_failed_sig = None
+                    result += (
+                        "\n\n[PANDUAN SISTEM: Jangan menebak perintah berikutnya. Baca pedoman, dokumentasi resmi, "
+                        "atau daftar bantuan/kapabilitas sistem terlebih dahulu. Jika fiturnya memang tidak ada, "
+                        "langsung laporkan secara jujur ke user.]"
+                    )
 
             if isinstance(result, dict) and "__image_payload__" in result:
                 img_fp = result["__image_payload__"]
