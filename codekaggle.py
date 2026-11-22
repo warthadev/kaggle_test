@@ -30,7 +30,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_dir",
-            "description": "Melihat daftar folder, file, dan jumlah baris kode di direktori mana pun (default proyek: /kaggle/working, bisa juga cek / atau folder sistem lain).",
+            "description": "Melihat daftar folder, file, dan jumlah baris di direktori mana pun (default workspace: /kaggle/working, bisa juga cek / atau folder lain).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -44,7 +44,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Membaca isi file teks atau kode lengkap dengan nomor baris (mendukung hingga 7.500 baris sekaligus).",
+            "description": "Membaca isi dokumen teks, data, catatan, atau kode lengkap dengan nomor baris (mendukung hingga 7.500 baris sekaligus).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -67,7 +67,7 @@ TOOLS = [
                     "path": {"type": "string", "description": "Path file target"},
                     "start_line": {"type": "integer", "description": "Nomor baris awal yang diganti (1-indexed)"},
                     "end_line": {"type": "integer", "description": "Nomor baris akhir yang diganti (inklusif)"},
-                    "new_code": {"type": "string", "description": "Kode pengganti yang sudah benar (tanpa nomor baris di depannya)"}
+                    "new_code": {"type": "string", "description": "Teks atau kode pengganti yang sudah benar (tanpa nomor baris di depannya)"}
                 },
                 "required": ["path", "start_line", "end_line", "new_code"]
             }
@@ -77,12 +77,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Membuat file baru atau menimpa seluruh isi file kecil/menengah dengan konten lengkap.",
+            "description": "Membuat dokumen, laporan, catatan, atau file baru maupun menimpa isi file kecil/menengah dengan konten lengkap.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Path file tujuan"},
-                    "content": {"type": "string", "description": "Isi file lengkap siap pakai"}
+                    "content": {"type": "string", "description": "Isi dokumen/file lengkap siap pakai"}
                 },
                 "required": ["path", "content"]
             }
@@ -92,7 +92,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "run_bash",
-            "description": "Menjalankan perintah shell/terminal non-interaktif di Kaggle (git, python, npm, pytest, curl, grep, dll) untuk cek error, build, atau verifikasi hasil kerja.",
+            "description": "Menjalankan perintah shell/terminal non-interaktif di server untuk otomasi, pengolahan data, kalkulasi, atau eksekusi sistem.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -107,7 +107,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "web_fetch",
-            "description": "Mengambil isi halaman web, dokumentasi, atau API secara real-time dari URL untuk memverifikasi fakta/versi terbaru.",
+            "description": "Mengambil informasi, artikel, referensi, data publik, atau halaman web secara real-time dari URL untuk memverifikasi fakta terbaru.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -121,7 +121,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "inspect_image",
-            "description": "Memuat file gambar dari disk (screenshot, UI, chart, foto) agar dapat dilihat dan dianalisis secara visual.",
+            "description": "Memuat file gambar dari disk (foto, grafik, dokumen hasil scan, diagram, screenshot) agar dapat dilihat dan dianalisis secara visual.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -140,7 +140,8 @@ SYS_SHALLOW_DIRS = {'proc', 'sys', 'dev', 'usr', 'lib', 'lib64', 'var', 'etc', '
 HARD_PATTERNS = re.compile(
     r'\b(analisis|analisa|audit|debug|kenapa|error|bug|fix|benerin|perbaiki|algoritma|logika|'
     r'hitung|matematika|rancang|arsitektur|optimasi|bandingkan|buktikan|pecahkan|diagnosa|struktur|'
-    r'strategi|riset|evaluasi|rencana|keputusan|pro kontra|skenario|dampak|studi kasus|cek|buatkan|bangun)\b',
+    r'strategi|riset|evaluasi|rencana|keputusan|pro kontra|skenario|dampak|studi kasus|cek|buatkan|bangun|'
+    r'bisnis|keuangan|investasi|negosiasi|hukum|risiko|prediksi|solusi|masalah|api|akun|akses)\b',
     re.IGNORECASE
 )
 
@@ -272,7 +273,7 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
 
 
 # =====================================================================
-# 2. REAL-TIME TELEMETRY, SERVER LOCATION & ANTI-HALUSINASI
+# 2. REAL-TIME TELEMETRY, SERVER LOCATION & GLOBAL REASONING
 # =====================================================================
 def get_server_location() -> str:
     try:
@@ -302,6 +303,18 @@ def get_now_wib() -> str:
     return f"{hari}, {now.day} {bulan} {now.year} pukul {now.strftime('%H:%M:%S')} WIB"
 
 
+def get_session_uptime() -> str:
+    try:
+        with open('/proc/uptime', 'r') as f:
+            up_sec = float(f.read().split()[0])
+        rem_sec = max(0.0, (12 * 3600) - up_sec)
+        up_h, up_m = divmod(int(up_sec // 60), 60)
+        rem_h, rem_m = divmod(int(rem_sec // 60), 60)
+        return f"Sesi berjalan: {up_h}j {up_m}m (Sisa batas 12j sesi: ~{rem_h}j {rem_m}m)"
+    except Exception:
+        return "Sesi: N/A"
+
+
 def get_realtime_telemetry(est_tokens: int, base_dir: str, max_ctx: int) -> str:
     try:
         total_d, _, free_d = shutil.disk_usage(base_dir)
@@ -314,15 +327,21 @@ def get_realtime_telemetry(est_tokens: int, base_dir: str, max_ctx: int) -> str:
             ['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,noheader,nounits'],
             text=True, timeout=3
         ).strip().splitlines()
-        gpu_info = " | ".join(
-            f"GPU{i}: {line.split(',')[0].strip()}/{line.split(',')[1].strip()} MiB"
-            for i, line in enumerate(gpu_out)
-        )
+        parts = []
+        for i, line in enumerate(gpu_out):
+            used_m = int(line.split(',')[0].strip())
+            tot_m = int(line.split(',')[1].strip())
+            free_m = tot_m - used_m
+            parts.append(f"GPU{i}: terpakai {used_m} MiB, SISA {free_m} MiB ({free_m/1024:.1f} GB) dari {tot_m} MiB")
+        gpu_info = " | ".join(parts)
     except Exception:
         gpu_info = "GPU: N/A"
 
-    pct = (est_tokens / max_ctx) * 100
-    return f"{disk_info} | {gpu_info} | Konteks terpakai: ~{pct:.1f}% ({est_tokens:,}/{max_ctx:,} token)"
+    used_pct = (est_tokens / max_ctx) * 100
+    free_tokens = max(0, max_ctx - est_tokens)
+    free_pct = 100.0 - used_pct
+    ctx_info = f"Token Konteks: terpakai {est_tokens:,} ({used_pct:.1f}%), SISA {free_tokens:,} ({free_pct:.1f}%) dari {max_ctx:,}"
+    return f"{disk_info} | {get_session_uptime()} | {gpu_info} | {ctx_info}"
 
 
 def estimate_history_tokens(msgs: list) -> int:
@@ -354,22 +373,29 @@ def prune_old_tool_outputs(msgs: list, max_ctx: int, max_ratio: float = 0.78):
 
 def build_system_prompt(est_tokens: int, base_dir: str, max_ctx: int) -> str:
     return (
-        "Kamu adalah Autonomous AI Agent & Partner Kerja Profesional berstandar global yang berjalan di lingkungan Kaggle.\n"
+        "Kamu adalah Autonomous AI Partner & Strategist Serba Bisa berstandar profesional global. "
+        "Keahlianmu mencakup seluruh bidang secara luas: strategi bisnis, riset pasar, keuangan, manajemen proyek, "
+        "penulisan profesional, pengambilan keputusan, logika, analisis dokumen/visual, hingga rekayasa perangkat lunak.\n"
         f"WAKTU REAL-TIME: {get_now_wib()}.\n"
-        f"LOKASI SERVER REAL-TIME: {SERVER_LOCATION_CACHE}.\n"
-        f"STATUS SERVER REAL-TIME: {get_realtime_telemetry(est_tokens, base_dir, max_ctx)}.\n"
-        f"WORKSPACE UTAMA: `{base_dir}` (dan `/kaggle/input` untuk dataset). Default pencarian proyek dimulai dari `{base_dir}`, "
-        "namun kamu tetap bisa memeriksa `/` atau direktori sistem lain kapan pun diminta user.\n"
+        f"LOKASI LINGKUNGAN KERJA: {SERVER_LOCATION_CACHE}.\n"
+        f"STATUS KAPASITAS REAL-TIME: {get_realtime_telemetry(est_tokens, base_dir, max_ctx)}.\n"
+        f"WORKSPACE UTAMA: `{base_dir}` (dan `/kaggle/input` untuk data). Default pencarian dimulai dari `{base_dir}`, "
+        "namun kamu tetap bisa memeriksa `/` atau direktori lain kapan pun diperlukan.\n"
         "TOOLS TERSEDIA: `list_dir`, `read_file`, `patch_file`, `write_file`, `run_bash`, `web_fetch`, `inspect_image`.\n\n"
-        "PRINSIP KERJA & ANTI-HALUSINASI WAJIB:\n"
-        "1. KOMUNIKASI NATURAL & PROFESIONAL: Bicaralah layaknya rekan senior manusia yang santai, jelas, tajam, dan tidak kaku. "
-        "Sebelum memanggil tool, beri kabar singkat apa yang sedang kamu lakukan.\n"
-        "2. DILARANG KERAS HALUSINASI: Jangan pernah mengarang isi file, path, output terminal, atau informasi terkini. "
-        "Gunakan `read_file`, `run_bash`, atau `web_fetch` untuk memverifikasi fakta secara real-time.\n"
-        "3. BERTINDAK MANDIRI SAMPAI TUNTAS: Inspeksi file -> perbaiki dengan `patch_file` -> verifikasi lewat `run_bash` -> "
-        "jika masih error, perbaiki lagi sampai benar-benar beres.\n"
-        "4. PRESISI PATCH FILE BESAR: Selalu baca nomor baris dengan `read_file` sebelum memakai `patch_file`.\n"
-        "5. KODE UTUH: Saat membuat file baru atau menulis kode di chat, tulis lengkap siap pakai tanpa placeholder."
+        "PRINSIP BERPIKIR GLOBAL & CARA KERJA WAJIB:\n"
+        "1. KOMUNIKASI NATURAL & PROFESIONAL: Bicaralah layaknya rekan kerja senior yang cerdas, santai, tajam, dan tidak kaku. "
+        "Berikan kabar singkat yang natural sebelum menjalankan tindakan.\n"
+        "2. PEMETAAN PRASYARAT SECARA MENYELURUH (HOLISTIK): Sebelum mengeksekusi tugas di bidang apa pun, selalu evaluasi "
+        "apakah seluruh komponen/pasangan syaratnya sudah lengkap:\n"
+        "   - Dalam bisnis, keuangan, atau strategi: periksa apakah variabel inti (tujuan, anggaran/modal, batasan waktu, target audiens, atau risiko) sudah jelas.\n"
+        "   - Dalam akses akun, layanan, atau integrasi sistem: periksa apakah pasangan identitasnya lengkap (misalnya ID/Username + Key/Token/Password, izin akses, atau konfigurasi pendukung), bukan hanya salah satu bagian saja.\n"
+        "   - Jika ada syarat penting yang kurang atau belum diberikan user, langsung jelaskan dengan jernih bagian mana yang kurang dan tanyakan ke user sebelum memaksakan tindakan.\n"
+        "3. DILARANG MENGULANG KEGAGALAN SECARA BUTA: Jika sebuah langkah atau perintah gagal, BERHENTI mengulang hal yang sama. "
+        "Mundur satu langkah, analisis akar masalahnya dari sudut pandang sistemik, dan ubah pendekatan atau minta informasi yang kurang.\n"
+        "4. DILARANG KERAS HALUSINASI: Jangan mengarang fakta, isi dokumen, hasil eksekusi, atau angka kapasitas. "
+        "Verifikasi informasi terkini lewat `web_fetch` atau baca data langsung lewat `read_file`, dan bedakan dengan teliti antara nilai TERPAKAI dan SISA.\n"
+        "5. EKSEKUSI MANDIRI & UTUH: Jika seluruh syarat sudah lengkap, selesaikan tugas secara mandiri sampai tuntas dan verifikasi hasilnya. "
+        "Setiap dokumen, rencana, atau kode yang dibuat harus utuh siap pakai tanpa placeholder."
     )
 
 
@@ -426,13 +452,15 @@ def wait_ready(proc, port: int, secs: int = 300) -> bool:
 
 
 def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
-                   user_content, initial_budget: int = 0, max_steps: int = 15):
+                   user_content, initial_budget: int = 0, max_steps: int = 12):
     history.append({'role': 'user', 'content': user_content})
     prune_old_tool_outputs(history, max_ctx)
     history[0]['content'] = build_system_prompt(estimate_history_tokens(history), base_dir, max_ctx)
 
+    last_failed_sig = None
+
     for step in range(max_steps):
-        budget = initial_budget if step == 0 else 1024
+        budget = initial_budget if step == 0 else 1536
         payload = {
             'messages': history,
             'tools': TOOLS,
@@ -525,12 +553,25 @@ def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
             except json.JSONDecodeError:
                 parsed_args = {}
 
+            sig = f"{fn_name}:{json.dumps(parsed_args, sort_keys=True)}"
             preview = json.dumps(parsed_args, ensure_ascii=False)
             if len(preview) > 120:
                 preview = preview[:117] + '...'
             print(f'⚙️ [Agent Action -> {fn_name}] {preview}', flush=True)
 
-            result = exec_tool(fn_name, parsed_args, base_dir=base_dir)
+            if sig == last_failed_sig:
+                result = (
+                    "SYSTEM GUARD: Langkah yang sama persis baru saja gagal. "
+                    "Dilarang mengulanginya. Berhenti memanggil tool, evaluasi prasyarat atau informasi "
+                    "yang belum lengkap secara menyeluruh, lalu jelaskan langsung ke user."
+                )
+            else:
+                result = exec_tool(fn_name, parsed_args, base_dir=base_dir)
+                if isinstance(result, str) and ("EXIT CODE: 1" in result or result.startswith("Error:")):
+                    last_failed_sig = sig
+                else:
+                    last_failed_sig = None
+
             if isinstance(result, dict) and "__image_payload__" in result:
                 img_fp = result["__image_payload__"]
                 q_img = result["question"]
@@ -579,13 +620,13 @@ def main():
     history = [{'role': 'system', 'content': build_system_prompt(0, base_dir, max_ctx)}]
 
     try:
-        print(f'Menyalakan Autonomous AI Agent ({get_now_wib()})...')
-        print(f'Lokasi Server: {SERVER_LOCATION_CACHE}')
+        print(f'Menyalakan Autonomous AI Partner ({get_now_wib()})...')
+        print(f'Lokasi Lingkungan: {SERVER_LOCATION_CACHE}')
         proc, log_file = start_llama_server(base_dir, port, max_ctx)
         if not wait_ready(proc, port):
             raise RuntimeError('Server gagal jalan')
 
-        print('Agent Siap! Telemetri real-time, Lokasi Server, Web Fetch, Vision, & Auto-Pruning aktif.')
+        print('Siap! Partner AI Global aktif (Strategi, Riset, Analisis, Dokumen, Visual, & Teknis).')
         print('Opsional: /img <path_gambar> <pertanyaan> | /clear | exit\n' + '=' * 75)
 
         while True:
@@ -597,7 +638,7 @@ def main():
             if user_in.lower() == '/clear':
                 history.clear()
                 history.append({'role': 'system', 'content': build_system_prompt(0, base_dir, max_ctx)})
-                print('[Memori agent di-reset]')
+                print('[Memori percakapan di-reset]')
                 continue
 
             t0 = time.time()
