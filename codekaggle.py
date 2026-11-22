@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Autonomous AI Agent for Kaggle (2x T4 + Qwen3.5 9B Vision + 128K Context)
+Autonomous AI Partner for Kaggle (2x T4 + Qwen3.5 9B Vision + 128K Context)
 Simpan sebagai /kaggle/working/codekaggle.py lalu jalankan:
     python /kaggle/working/codekaggle.py
 """
@@ -8,6 +8,7 @@ Simpan sebagai /kaggle/working/codekaggle.py lalu jalankan:
 import os
 import re
 import sys
+import html
 import glob
 import time
 import json
@@ -15,6 +16,7 @@ import base64
 import shutil
 import argparse
 import subprocess
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
 
@@ -106,8 +108,22 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": "Mencari informasi terkini di internet (berita, statistik, jumlah subscriber/follower, harga, dokumentasi) secara real-time tanpa perlu tahu URL sebelumnya.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Kata kunci pencarian spesifik di internet"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "web_fetch",
-            "description": "Mengambil pedoman resmi, dokumentasi, artikel, referensi, atau data publik secara real-time dari URL untuk verifikasi sebelum bertindak.",
+            "description": "Mengambil isi lengkap halaman web, pedoman resmi, atau API secara real-time dari URL spesifik.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -139,14 +155,6 @@ PROJECT_IGNORE_DIRS = {
     'llama_bin', 'model_gguf'
 }
 SYS_SHALLOW_DIRS = {'proc', 'sys', 'dev', 'usr', 'lib', 'lib64', 'var', 'etc', 'boot', 'run', 'opt', 'srv'}
-
-HARD_PATTERNS = re.compile(
-    r'\b(analisis|analisa|audit|debug|kenapa|error|bug|fix|benerin|perbaiki|algoritma|logika|'
-    r'hitung|matematika|rancang|arsitektur|optimasi|bandingkan|buktikan|pecahkan|diagnosa|struktur|'
-    r'strategi|riset|evaluasi|rencana|keputusan|pro kontra|skenario|dampak|studi kasus|cek|buatkan|bangun|'
-    r'bisnis|keuangan|investasi|negosiasi|hukum|risiko|prediksi|solusi|masalah|api|akun|akses|pedoman|aturan|sop)\b',
-    re.IGNORECASE
-)
 
 
 def encode_image_b64(img_path: str) -> str:
@@ -260,11 +268,41 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
                 output = output[:3500] + "\n\n... [OUTPUT DIPOTONG] ...\n\n" + output[-3500:]
             return f"EXIT CODE: {res.returncode}\nOUTPUT:\n{output or '(kosong)'}"
 
+        elif name == "web_search":
+            q = args["query"]
+            encoded_q = urllib.parse.urlencode({'q': q})
+            req = urllib.request.Request(
+                f"https://lite.duckduckgo.com/lite/?{encoded_q}",
+                headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
+            )
+            with urllib.request.urlopen(req, timeout=20) as r:
+                raw = html.unescape(r.read().decode('utf-8', errors='ignore'))
+
+            snippets = re.findall(r"<td class=['\"]result-snippet['\"]>(.*?)</td>", raw, flags=re.DOTALL | re.IGNORECASE)
+            links = re.findall(r"<a[^>]+class=['\"]result-link['\"][^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>", raw, flags=re.DOTALL | re.IGNORECASE)
+
+            results = []
+            for idx in range(min(8, max(len(links), len(snippets)))):
+                title = re.sub(r'<[^>]+>', '', links[idx][1]).strip() if idx < len(links) else ''
+                href = links[idx][0].strip() if idx < len(links) else ''
+                snip = re.sub(r'<[^>]+>', '', snippets[idx]).strip() if idx < len(snippets) else ''
+                snip = re.sub(r'\s+', ' ', snip)
+                if title or snip:
+                    results.append(f"{idx+1}. {title}\n   URL: {href}\n   Ringkasan: {snip}")
+
+            if not results:
+                clean = re.sub(r'<(script|style).*?>.*?</\1>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+                clean = re.sub(r'<[^>]+>', ' ', clean)
+                clean = re.sub(r'\s+', ' ', clean).strip()
+                return f"HASIL PENCARIAN '{q}':\n{clean[:5000]}"
+
+            return f"HASIL PENCARIAN REAL-TIME UNTUK '{q}':\n\n" + "\n\n".join(results)
+
         elif name == "web_fetch":
             url = args["url"]
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=20) as r:
-                raw = r.read().decode('utf-8', errors='ignore')
+                raw = html.unescape(r.read().decode('utf-8', errors='ignore'))
             clean = re.sub(r'<(script|style).*?>.*?</\1>', '', raw, flags=re.DOTALL | re.IGNORECASE)
             clean = re.sub(r'<[^>]+>', ' ', clean)
             clean = re.sub(r'\s+', ' ', clean).strip()
@@ -282,7 +320,7 @@ def exec_tool(name: str, args: dict, base_dir: str = DEFAULT_BASE_DIR):
 
 
 # =====================================================================
-# 2. REAL-TIME TELEMETRY, SERVER LOCATION & GLOBAL REASONING
+# 2. REAL-TIME TELEMETRY, SERVER LOCATION & NATURAL REASONING
 # =====================================================================
 def get_server_location() -> str:
     try:
@@ -390,31 +428,29 @@ def build_system_prompt(est_tokens: int, base_dir: str, max_ctx: int) -> str:
         f"STATUS KAPASITAS REAL-TIME: {get_realtime_telemetry(est_tokens, base_dir, max_ctx)}.\n"
         f"WORKSPACE UTAMA: `{base_dir}` (dan `/kaggle/input` untuk data). Default pencarian dimulai dari `{base_dir}`, "
         "namun kamu tetap bisa memeriksa `/` atau direktori lain kapan pun diperlukan.\n"
-        "TOOLS TERSEDIA: `list_dir`, `read_file`, `patch_file`, `write_file`, `run_bash`, `web_fetch`, `inspect_image`.\n\n"
-        "PRINSIP BERPIKIR GLOBAL & PROTOKOL KERJA WAJIB:\n"
-        "1. BACA PEDOMAN & VERIFIKASI SEBELUM BERTINDAK (WAJIB): Sebelum mengeksekusi tindakan pada sistem, API, aturan, "
-        "regulasi, atau alur kerja apa pun yang belum 100% pasti, WAJIB baca pedoman, manual, dokumentasi resmi (`web_fetch`), "
-        "SOP lokal (`read_file`), atau daftar kapabilitas/bantuan (`--help` / inspeksi objek) TERLEBIH DAHULU. "
-        "Jangan pernah menebak-nebak nama perintah, fitur, atau aturan.\n"
-        "2. JUJUR JIKA TIDAK ADA SOLUSI / FITUR TIDAK TERSEDIA: Jika setelah membaca pedoman resmi atau memeriksa kapabilitas sistem "
-        "terbukti bahwa fitur, izin, atau solusi yang diminta user memang TIDAK tersedia atau tidak didukung, BERHENTI mencoba-coba "
-        "dan sampaikan langsung faktanya ke user secara jernih beserta alternatif praktis yang bisa dilakukan.\n"
-        "3. PEMETAAN PRASYARAT SECARA MENYELURUH (HOLISTIK): Sebelum bertindak di bidang apa pun (bisnis, keuangan, strategi, "
-        "maupun akses sistem), evaluasi apakah seluruh variabel/pasangan syaratnya sudah lengkap (misalnya tujuan + anggaran + batasan waktu, "
-        "atau pasangan ID/Username + Key/Token). Jika ada bagian yang kurang, langsung tanyakan ke user sebelum memaksakan eksekusi.\n"
-        "4. DILARANG MENGULANG TINDAKAN YANG SAMA & DILARANG HALUSINASI: Jangan pernah mengulang perintah dengan argumen yang sama dua kali. "
-        "Jangan mengarang fakta atau angka telemetri, dan bedakan dengan teliti antara nilai TERPAKAI dan SISA.\n"
-        "5. KOMUNIKASI NATURAL & EKSEKUSI UTUH: Bicaralah layaknya rekan senior yang cerdas, santai, tajam, dan tidak kaku. "
-        "Setiap dokumen, rencana, atau kode yang dibuat harus lengkap siap pakai tanpa placeholder."
+        "TOOLS TERSEDIA: `list_dir`, `read_file`, `patch_file`, `write_file`, `run_bash`, `web_search`, `web_fetch`, `inspect_image`.\n\n"
+        "PRINSIP BERPIKIR & CARA KERJA ALAMI:\n"
+        "1. BACA PEDOMAN & VERIFIKASI FAKTA SEBELUM BERTINDAK: Setiap kali pengguna menanyakan informasi yang dinamis, "
+        "terkini, atau berada di luar pengetahuan pasti (misalnya angka statistik publik saat ini, perkembangan terbaru, "
+        "atau cara kerja suatu sistem/API/aturan), cari dan baca pedoman atau sumber aslinya terlebih dahulu lewat "
+        "`web_search`, `web_fetch`, `read_file`, atau inspeksi bantuan sistem sebelum menjawab. Jangan pernah menebak.\n"
+        "2. JUJUR JIKA TIDAK ADA SOLUSI / DATA TIDAK TERSEDIA: Jika setelah memeriksa pedoman resmi atau mencari di web "
+        "terbukti bahwa fitur, izin, atau data yang diminta memang tidak tersedia, berhenti mencoba-coba dan sampaikan "
+        "terus terang beserta alternatif praktisnya.\n"
+        "3. PEMETAAN PRASYARAT SECARA MENYELURUH: Sebelum mengeksekusi tugas di bidang apa pun (strategi bisnis, riset, "
+        "keuangan, maupun akses layanan/sistem), pertimbangkan apakah seluruh komponen atau pasangan syaratnya sudah lengkap "
+        "(seperti tujuan + anggaran + batasan waktu, atau pasangan ID/Username + Key/Token). Jika ada bagian penting yang "
+        "belum ada, tanyakan dengan natural kepada pengguna sebelum bertindak.\n"
+        "4. ANTI-PENGULANGAN & ANTI-HALUSINASI: Jangan mengulang tindakan yang sama persis dua kali. Jangan mengarang fakta "
+        "atau angka kapasitas, dan bedakan dengan teliti antara nilai TERPAKAI dan SISA.\n"
+        "5. KOMUNIKASI NATURAL & HASIL UTUH: Sesuaikan gaya bicaramu secara alami dengan konteks obrolan pengguna—santai, "
+        "tajam, empatik, dan profesional seperti rekan senior manusia. Setiap dokumen, rencana, atau kode yang dibuat "
+        "harus lengkap siap pakai tanpa placeholder."
     )
 
 
-def auto_budget(text: str) -> int:
-    return 2048 if HARD_PATTERNS.search(text) else 0
-
-
 # =====================================================================
-# 3. SERVER LIFECYCLE & AGENT LOOP
+# 3. SERVER LIFECYCLE & NATURAL AGENT LOOP
 # =====================================================================
 def start_llama_server(base_dir: str, port: int, max_ctx: int):
     srv_matches = glob.glob(f'{base_dir}/llama_bin/**/llama-server', recursive=True)
@@ -462,7 +498,7 @@ def wait_ready(proc, port: int, secs: int = 300) -> bool:
 
 
 def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
-                   user_content, initial_budget: int = 0, max_steps: int = 10):
+                   user_content, max_steps: int = 10):
     history.append({'role': 'user', 'content': user_content})
     prune_old_tool_outputs(history, max_ctx)
     history[0]['content'] = build_system_prompt(estimate_history_tokens(history), base_dir, max_ctx)
@@ -470,17 +506,17 @@ def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
     executed_sigs = set()
 
     for step in range(max_steps):
-        budget = initial_budget if step == 0 else 1536
+        # Penalaran native selalu aktif dengan budget natural agar model sendiri yang menakar kedalaman berpikirnya
         payload = {
             'messages': history,
             'tools': TOOLS,
             'tool_choice': 'auto',
             'max_tokens': -1,
-            'temperature': 0.25,
+            'temperature': 0.3,
             'stream': True,
             'cache_prompt': True,
-            'reasoning_budget': budget,
-            'chat_template_kwargs': {'enable_thinking': budget != 0},
+            'reasoning_budget': 2048,
+            'chat_template_kwargs': {'enable_thinking': True},
         }
         req = urllib.request.Request(
             api_url,
@@ -618,7 +654,7 @@ def run_agent_turn(history: list, api_url: str, base_dir: str, max_ctx: int,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Autonomous AI Agent for Kaggle")
+    parser = argparse.ArgumentParser(description="Autonomous AI Partner for Kaggle")
     parser.add_argument('--workdir', default=DEFAULT_BASE_DIR, help='Workspace directory (default: /kaggle/working)')
     parser.add_argument('--port', type=int, default=DEFAULT_PORT, help='Server port (default: 8080)')
     parser.add_argument('--ctx', type=int, default=DEFAULT_MAX_CTX, help='Max context tokens (default: 131072)')
@@ -640,7 +676,7 @@ def main():
         if not wait_ready(proc, port):
             raise RuntimeError('Server gagal jalan')
 
-        print('Siap! Partner AI Global aktif (Strategi, Riset, Analisis, Dokumen, Visual, & Teknis).')
+        print('Siap! Partner AI Global aktif dengan penalaran & inisiatif alami.')
         print('Opsional: /img <path_gambar> <pertanyaan> | /clear | exit\n' + '=' * 75)
 
         while True:
@@ -667,9 +703,9 @@ def main():
                     {'type': 'text', 'text': prompt_txt},
                     {'type': 'image_url', 'image_url': {'url': encode_image_b64(img_path)}}
                 ]
-                run_agent_turn(history, api_url, base_dir, max_ctx, content, initial_budget=auto_budget(prompt_txt))
+                run_agent_turn(history, api_url, base_dir, max_ctx, content)
             else:
-                run_agent_turn(history, api_url, base_dir, max_ctx, user_in, initial_budget=auto_budget(user_in))
+                run_agent_turn(history, api_url, base_dir, max_ctx, user_in)
 
             print(f'⏱️ Total waktu kerja: {time.time() - t0:.1f}s')
 
